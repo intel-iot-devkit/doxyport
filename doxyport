@@ -1,0 +1,18 @@
+#!/bin/bash
+# Mircea Bardac (mircea.bardac@intel.com)
+
+# Get current working dir
+CWD=$(pwd)
+
+# Switch to the script's directory to load environment
+cd /home/edison/builds/doxyport
+source env/bin/activate # load environment
+
+# Save script's directory
+SDIR=$(pwd)
+
+# Get back to the working directory and call the Python script with the given parameters
+cd $CWD
+
+python $SDIR/doxyport.py $@
+
