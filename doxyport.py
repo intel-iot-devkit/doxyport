@@ -3,9 +3,11 @@
 
 import sys
 import os.path
+import os
 import shutil
 import CppHeaderParser
 import javalang
+import argparse
 
 class CppClassContainer():
     def __init__(self, name):
@@ -179,14 +181,14 @@ class JavaClassContainer:
         self.add_method(declaration.name, d)
 
     def attach_doxygen(self, cpp_cc):
-        if cpp_cc.namespace_doxygen != "":
-            # Merge namespace doxygen and class doxygen comments
-            t = cpp_cc.class_doxygen
-            cpp_cc.class_doxygen = []
-            cpp_cc.class_doxygen.extend(cpp_cc.namespace_doxygen[:-1])
-            if len(t) > 0:
-                cpp_cc.class_doxygen.extend(t[1:])
-            cpp_cc.namespace_doxygen = ""
+        # if cpp_cc.namespace_doxygen != "":
+        #     # Merge namespace doxygen and class doxygen comments
+        #     t = cpp_cc.class_doxygen
+        #     cpp_cc.class_doxygen = []
+        #     cpp_cc.class_doxygen.extend(cpp_cc.namespace_doxygen[:-1])
+        #     if len(t) > 0:
+        #         cpp_cc.class_doxygen.extend(t[1:])
+        #     cpp_cc.namespace_doxygen = ""
         if self.package_line != -1 and cpp_cc.namespace_doxygen != "":
             self.doxygen_map[self.package_line] = cpp_cc.namespace_doxygen
         if self.class_line != -1 and cpp_cc.class_doxygen != "":
@@ -257,9 +259,32 @@ class JavaClassContainer:
                 self.add_method_declaration(declaration)
 
 class SwigProcessor():
-    def __init__(self):
+    def __init__(self, source_loc, destination_loc):
         self.cpp_classes = {}
         self.java_classes = {}
+        self.source_loc = source_loc
+        self.destination_loc = destination_loc
+        self.parsed_destination_files = []
+
+    def find_source(self, file_name):
+        if os.path.isfile(file_name):
+            return file_name
+        base_file_name = os.path.basename(file_name)
+        for p in self.source_loc:
+            path = "%s/%s" %(p, base_file_name)
+            if os.path.isfile(path):
+                return path
+        return None
+
+    def find_destination(self, file_name):
+        if os.path.isfile(file_name):
+            return file_name
+        base_file_name = os.path.basename(file_name)
+        for p in self.destination_loc:
+            path = "%s/%s" %(p, base_file_name)
+            if os.path.isfile(path):
+                return path
+        return None
 
     def process_java(self, class_file):
         ret = {}
@@ -282,6 +307,12 @@ class SwigProcessor():
     def process_header(self, root_path, header_file):
         ret = {}
         header_file = "%s/%s" %(root_path, header_file)
+        header_loc = self.find_source(header_file)
+        if header_loc == None:
+            print "Unable to locate: %s" %(header_file)
+            return
+        header_file = header_loc
+        print "CWD: %s" %(os.getcwd())
         print "Processing header: %s" %(header_file)
         try:
             parser = CppHeaderParser.CppHeader(header_file)
@@ -315,15 +346,21 @@ class SwigProcessor():
                     continue
                 if include_file.endswith(".h"):
                     self.cpp_classes.update(self.process_header(root_path, include_file))
+                if include_file.endswith(".hpp"):
+                    self.cpp_classes.update(self.process_header(root_path, include_file))
         for class_name in self.cpp_classes.keys():
             java_file = "build/%s/%s.java" %(root_path, class_name)
-            orig_java_file = "build/%s/%s.java.orig" %(root_path, class_name)
-            if not os.path.isfile(java_file):
-                print "Unable to find Java class file: %s" %(java_file)
+            java_loc = self.find_destination(java_file)
+            if java_loc == None:
+                print "Unable to find Java class definition file: %s" %(java_file)
                 continue
+            java_file = java_loc
+            orig_java_file = "%s.orig" %(java_file)
+            # Restore class file from .orig file (we're rebuilding, trust backups)
             if os.path.isfile(orig_java_file):
                 shutil.copyfile(orig_java_file, java_file)
             self.java_classes.update(self.process_java(java_file))
+            self.parsed_destination_files.append(java_file)
         #print self.cpp_classes
         #print self.java_classes
 
@@ -334,17 +371,38 @@ class SwigProcessor():
                 self.java_classes[class_name].attach_doxygen(self.cpp_classes[class_name])
                 self.java_classes[class_name].rewrite_class_file()
 
-if len(sys.argv) < 2:
-    print "Usage: %s <file_list_with_SWIG_interfaces>" %(sys.argv[0])
-    sys.exit(1)
+    def append_destination_files(self, output_file_handler):
+        if output_file_handler == None: return
+        for l in self.parsed_destination_files:
+            output_file_handler.write("%s\n" %(l))
 
-swig_list_file = sys.argv[1]
+parser = argparse.ArgumentParser()
+parser.add_argument("file_list", help = "List with SWIG interface files")
+parser.add_argument("-s","--source", default = "", help = "One or more paths where to look for C/C++ headers")
+parser.add_argument("-d","--destination", default = "", help = "One or more paths where to look for Java class definitions")
+parser.add_argument("-o","--output", help = "Write a file with the list of parsed files")
+args = parser.parse_args()
+
+print "CWD: %s" %(os.getcwd())
+
+swig_list_file = args.file_list
 if not os.path.isfile(swig_list_file):
     print "File not found: %s" %(swig_list_file)
     sys.exit(2)
 
+output_file_handler = None
+if args.output != None:
+    try:
+        output_file_handler = open(args.output,"wt")
+    except:
+        pass
+
 for swig_file in open(swig_list_file).readlines():
     swig_file = swig_file.strip()
-    sp = SwigProcessor()
+    sp = SwigProcessor(args.source.split(","),args.destination.split(","))
     sp.process_swig(swig_file)
     sp.push_doxygen()
+    sp.append_destination_files(output_file_handler)
+
+if output_file_handler != None:
+    output_file_handler.close()
