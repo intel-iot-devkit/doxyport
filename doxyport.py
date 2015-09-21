@@ -117,10 +117,10 @@ class CppClassContainer():
                 if "doxygen" in m and len(m["doxygen"]) > 0: print "*** Public enum \"%s\" in class \"%s\" has doxygen comment." %(m["name"], self.name)
         if len(class_content["nested_classes"]) > 0:
             print "*** Class \"%s\" has %d public nested classes." %(self.name, len(class_content["nested_classes"]))
-            for c in class_content["nested_classes"]:
-                print "    * %s" %(c["name"])
-                for x in c.keys():
-                    print "      * %s: %s" %(x, c[x])
+            #for c in class_content["nested_classes"]:
+            #    print "    * %s" %(c["name"])
+            #    for x in c.keys():
+            #        print "      * %s: %s" %(x, c[x])
 
     def get_method_doxygen(self, method_name, method_declaration):
         if not method_name in self.methods: return ""
@@ -326,16 +326,14 @@ class SwigProcessor():
 
     def process_header(self, root_path, header_file):
         ret = {}
-        header_file = "%s/%s" %(root_path, header_file)
-        header_loc = self.find_source(header_file)
+        header_loc = "%s/%s" %(root_path, header_file)
+        header_loc = self.find_source(header_loc)
         if header_loc == None:
-            print "Unable to locate: %s" %(header_file)
+            print "Unable to locate: %s" %(header_loc)
             return
-        header_file = header_loc
-        print "CWD: %s" %(os.getcwd())
-        print "Processing header: %s" %(header_file)
+        print "Processing header: %s" %(header_loc)
         try:
-            parser = CppHeaderParser.CppHeader(header_file)
+            parser = CppHeaderParser.CppHeader(header_loc)
         except CppHeaderParser.CppParseError as e:
             print(e)
             return ret
@@ -402,8 +400,6 @@ parser.add_argument("-s","--source", default = "", help = "One or more paths whe
 parser.add_argument("-d","--destination", default = "", help = "One or more paths where to look for Java class definitions")
 parser.add_argument("-o","--output", help = "Write a file with the list of parsed files")
 args = parser.parse_args()
-
-print "CWD: %s" %(os.getcwd())
 
 swig_list_file = args.file_list
 if not os.path.isfile(swig_list_file):
