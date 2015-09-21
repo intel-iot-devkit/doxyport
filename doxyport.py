@@ -394,31 +394,32 @@ class SwigProcessor():
         for l in self.parsed_destination_files:
             output_file_handler.write("%s\n" %(l))
 
-parser = argparse.ArgumentParser()
-parser.add_argument("file_list", help = "List with SWIG interface files")
-parser.add_argument("-s","--source", default = "", help = "One or more paths where to look for C/C++ headers")
-parser.add_argument("-d","--destination", default = "", help = "One or more paths where to look for Java class definitions")
-parser.add_argument("-o","--output", help = "Write a file with the list of parsed files")
-args = parser.parse_args()
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("file_list", help = "List with SWIG interface files")
+    parser.add_argument("-s","--source", default = "", help = "One or more paths where to look for C/C++ headers")
+    parser.add_argument("-d","--destination", default = "", help = "One or more paths where to look for Java class definitions")
+    parser.add_argument("-o","--output", help = "Write a file with the list of parsed files")
+    args = parser.parse_args()
 
-swig_list_file = args.file_list
-if not os.path.isfile(swig_list_file):
-    print "File not found: %s" %(swig_list_file)
-    sys.exit(2)
+    swig_list_file = args.file_list
+    if not os.path.isfile(swig_list_file):
+        print "File not found: %s" %(swig_list_file)
+        sys.exit(2)
 
-output_file_handler = None
-if args.output != None:
-    try:
-        output_file_handler = open(args.output,"wt")
-    except:
-        pass
+    output_file_handler = None
+    if args.output != None:
+        try:
+            output_file_handler = open(args.output,"wt")
+        except:
+            pass
 
-for swig_file in open(swig_list_file).readlines():
-    swig_file = swig_file.strip()
-    sp = SwigProcessor(args.source.split(","),args.destination.split(","))
-    sp.process_swig(swig_file)
-    sp.push_doxygen()
-    sp.append_destination_files(output_file_handler)
+    for swig_file in open(swig_list_file).readlines():
+        swig_file = swig_file.strip()
+        sp = SwigProcessor(args.source.split(","),args.destination.split(","))
+        sp.process_swig(swig_file)
+        sp.push_doxygen()
+        sp.append_destination_files(output_file_handler)
 
-if output_file_handler != None:
-    output_file_handler.close()
+    if output_file_handler != None:
+        output_file_handler.close()
