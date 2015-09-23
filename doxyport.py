@@ -332,6 +332,11 @@ class SwigProcessor():
             return file_name
         base_file_name = os.path.basename(file_name)
         for p in self.destination_loc:
+            # Try to see if we can just prepend the given destinations
+            # and consider we are being given a relative path
+            if os.path.isfile("%s/%s" %(p, file_name)):
+                return "%s/%s" %(p, file_name)
+            # Search directly the base file name in the specified destinations
             path = "%s/%s" %(p, base_file_name)
             if os.path.isfile(path):
                 return path
