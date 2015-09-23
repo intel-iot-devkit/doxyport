@@ -28,6 +28,7 @@ import shutil
 import CppHeaderParser
 import javalang
 import argparse
+import re
 
 class CppClassContainer():
     def __init__(self, name):
@@ -200,7 +201,35 @@ class JavaClassContainer:
         }
         self.add_method(declaration.name, d)
 
-    def attach_doxygen(self, cpp_cc):
+    def doxygen_post_process(self, doxygen_comment, params = {}):
+        if params.get("snippet_file_mapping", None) == None:
+            # No post-processing parameters passed
+            return doxygen_comment
+        def file_lookup(file_name, dict_name):
+            r = dict_name.get(file_name, None)
+            if r is None:
+                print "* Warning: No match found for referenced snippet in '%s'" %(file_name)
+                return file_name
+            return r
+        def file_replace(match_object):
+            file_name = match_object.group(1)
+            new_name = file_lookup(file_name, params.get("snippet_file_mapping", {}))
+            return "@snippet %s " %(new_name)
+        doxygen_comment_out = []
+        # TODO: must ensure all comments are stored in the same way
+        # (not as lists or as strings at the same time)
+        # Ugly temporary fix below
+        if type(doxygen_comment) == str: doxygen_comment = [ doxygen_comment ]
+        for line in doxygen_comment:
+            # code for displaying regexp matches
+            #if line.find("@snippet")>=0: print "!!!!!", line
+            #if self.snippet_pattern.search(line): print "?????", line
+            r = re.sub(self.snippet_pattern, file_replace, line)
+            #if line.find("@snippet")>=0: print "!!!!>", r
+            doxygen_comment_out.append(r)
+        return doxygen_comment_out
+
+    def attach_doxygen(self, cpp_cc, params):
         # if cpp_cc.namespace_doxygen != "":
         #     # Merge namespace doxygen and class doxygen comments
         #     t = cpp_cc.class_doxygen
@@ -210,9 +239,9 @@ class JavaClassContainer:
         #         cpp_cc.class_doxygen.extend(t[1:])
         #     cpp_cc.namespace_doxygen = ""
         if self.package_line != -1 and cpp_cc.namespace_doxygen != "":
-            self.doxygen_map[self.package_line] = cpp_cc.namespace_doxygen
+            self.doxygen_map[self.package_line] = self.doxygen_post_process(cpp_cc.namespace_doxygen, params)
         if self.class_line != -1 and cpp_cc.class_doxygen != "":
-            self.doxygen_map[self.class_line] = cpp_cc.class_doxygen
+            self.doxygen_map[self.class_line] = self.doxygen_post_process(cpp_cc.class_doxygen, params)
         for method in self.methods.keys():
             method_list = self.methods[method]
             for m_declaration in method_list:
@@ -225,7 +254,7 @@ class JavaClassContainer:
                     d = ""
                 if d != "":
                     print "* Attaching doxygen to method %s(%d params) @ line %d" %(method, len(m_declaration["param_types"]), m_declaration["line_position"])
-                    self.doxygen_map[m_declaration["line_position"]] = d
+                    self.doxygen_map[m_declaration["line_position"]] = self.doxygen_post_process(d, params)
 
     def insert_doxygen(self, out_file, doxygen_line):
         """
@@ -263,6 +292,7 @@ class JavaClassContainer:
         self.doxygen_map = {}
         self.package_line = -1
         self.class_line = -1
+        self.snippet_pattern = re.compile("@snippet\s([a-zA-Z0-9_\.\-]+)\s")
         c = 0
         with open(filename) as f:
             for l in f.readlines():
@@ -279,12 +309,13 @@ class JavaClassContainer:
                 self.add_method_declaration(declaration)
 
 class SwigProcessor():
-    def __init__(self, source_loc, destination_loc):
+    def __init__(self, source_loc, destination_loc, params):
         self.cpp_classes = {}
         self.java_classes = {}
         self.source_loc = source_loc
         self.destination_loc = destination_loc
         self.parsed_destination_files = []
+        self.params = params
 
     def find_source(self, file_name):
         if os.path.isfile(file_name):
@@ -338,6 +369,11 @@ class SwigProcessor():
             print(e)
             return ret
             #sys.exit(3)
+        except UnboundLocalError as e:
+            # The CppHeaderParser crashes on some syntax, this catches the error.
+            # Issue not fixed upstream, using this as a workaround.
+            print(e)
+            return ret
 
         for class_name,class_content in parser.classes.iteritems():
             c = CppClassContainer(class_name)
@@ -386,7 +422,7 @@ class SwigProcessor():
         for class_name in self.cpp_classes.keys():
             if class_name in self.java_classes:
                 #print "common class", class_name
-                self.java_classes[class_name].attach_doxygen(self.cpp_classes[class_name])
+                self.java_classes[class_name].attach_doxygen(self.cpp_classes[class_name], self.params)
                 self.java_classes[class_name].rewrite_class_file()
 
     def append_destination_files(self, output_file_handler):
@@ -400,6 +436,7 @@ if __name__ == "__main__":
     parser.add_argument("-s","--source", default = "", help = "One or more paths where to look for C/C++ headers")
     parser.add_argument("-d","--destination", default = "", help = "One or more paths where to look for Java class definitions")
     parser.add_argument("-o","--output", help = "Write a file with the list of parsed files")
+    parser.add_argument("-m","--mapping", default = None, help = "File mapping for @snippet references")
     args = parser.parse_args()
 
     swig_list_file = args.file_list
@@ -414,9 +451,20 @@ if __name__ == "__main__":
         except:
             pass
 
+    params = { "snippet_file_mapping": None }
+    if args.mapping is not None:
+        mapping = {}
+        with open(args.mapping) as f:
+            for line in f:
+                if len(line) == 0: continue
+                if line[0] == "#": continue
+                words = line.strip().split('\t')
+                mapping[words[0]] = words[1]
+        params["snippet_file_mapping"] = mapping
+
     for swig_file in open(swig_list_file).readlines():
         swig_file = swig_file.strip()
-        sp = SwigProcessor(args.source.split(","),args.destination.split(","))
+        sp = SwigProcessor(args.source.split(","), args.destination.split(","), params)
         sp.process_swig(swig_file)
         sp.push_doxygen()
         sp.append_destination_files(output_file_handler)
