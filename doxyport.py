@@ -164,6 +164,7 @@ class JavaClassContainer:
             'type': declaration.type.name,
             'line_position': declaration._position[0],
             'private': 'private' in declaration.modifiers,
+            'protected': 'protected' in declaration.modifiers,
             'public': 'public' in declaration.modifiers,
             'static': 'static' in declaration.modifiers,
             'const': 'const' in declaration.modifiers,
@@ -264,15 +265,12 @@ class JavaClassContainer:
                 if m_declaration["protected"]:
                     self.convert_protected_to_private_list.append(m_declaration["line_position"])
         for field_name, field_declaration in self.fields.items():
-            #print "!!!", field_name, field_declaration
             if field_declaration.get("protected", False):
                 self.convert_protected_to_private_list.append(field_declaration["line_position"])
         #print "!!!", self.class_declaration, self.convert_protected_to_private_list
 
     def convert_protected_to_private_text(self, text):
-        #print "Converting line: %s" %(text.strip())
         r = re.sub(self.protected_pattern, " private ", text)
-        #print ">Converted line: %s" %(r.strip())
         return r
 
     def insert_doxygen(self, out_file, doxygen_line):
@@ -291,7 +289,7 @@ class JavaClassContainer:
         java_file = "%s" %(self.filename)
         orig_java_file = "%s.orig" %(self.filename)
         shutil.copyfile(java_file, orig_java_file)
-        print "Rewriting %s (%d doxygen attachments).\n" %(java_file, len(self.doxygen_map))
+        print "Rewriting %s (%d doxygen attachments)." %(java_file, len(self.doxygen_map))
         #print self.doxygen_map
         i = 1
         insert_lines = self.doxygen_map.keys()
@@ -305,6 +303,9 @@ class JavaClassContainer:
                 l = self.convert_protected_to_private_text(l)
             out_file.write("%s" %(l))
             i += 1
+        if params["convert-protected-to-private"]:
+            print "> Converted %d methods and fields from 'private' to 'protected'." %(len(self.convert_protected_to_private_list))
+        print
         out_file.close()
 
     def __init__(self, filename, cd):
