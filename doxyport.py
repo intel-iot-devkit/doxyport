@@ -255,6 +255,25 @@ class JavaClassContainer:
                 if d != "":
                     print "* Attaching doxygen to method %s(%d params) @ line %d" %(method, len(m_declaration["param_types"]), m_declaration["line_position"])
                     self.doxygen_map[m_declaration["line_position"]] = self.doxygen_post_process(d, params)
+        # TODO: Attach Doxygen to fields as well
+
+    def convert_protected_to_private(self):
+        for method in self.methods.keys():
+            method_list = self.methods[method]
+            for m_declaration in method_list:
+                if m_declaration["protected"]:
+                    self.convert_protected_to_private_list.append(m_declaration["line_position"])
+        for field_name, field_declaration in self.fields.items():
+            #print "!!!", field_name, field_declaration
+            if field_declaration.get("protected", False):
+                self.convert_protected_to_private_list.append(field_declaration["line_position"])
+        #print "!!!", self.class_declaration, self.convert_protected_to_private_list
+
+    def convert_protected_to_private_text(self, text):
+        #print "Converting line: %s" %(text.strip())
+        r = re.sub(self.protected_pattern, " private ", text)
+        #print ">Converted line: %s" %(r.strip())
+        return r
 
     def insert_doxygen(self, out_file, doxygen_line):
         """
@@ -268,7 +287,7 @@ class JavaClassContainer:
         for new_line in d:
             out_file.write("%s\n" %(new_line))
 
-    def rewrite_class_file(self):
+    def rewrite_class_file(self, params):
         java_file = "%s" %(self.filename)
         orig_java_file = "%s.orig" %(self.filename)
         shutil.copyfile(java_file, orig_java_file)
@@ -278,7 +297,12 @@ class JavaClassContainer:
         insert_lines = self.doxygen_map.keys()
         out_file = open(java_file,"wt")
         for l in open(orig_java_file).readlines():
-            if i in insert_lines: self.insert_doxygen(out_file, i)
+            # Check if Doxygen comments need to be appended before this line
+            if i in insert_lines:
+                self.insert_doxygen(out_file, i)
+            # Check if 'protected' needs to be changed to 'private' for this line
+            if params["convert-protected-to-private"] and i in self.convert_protected_to_private_list:
+                l = self.convert_protected_to_private_text(l)
             out_file.write("%s" %(l))
             i += 1
         out_file.close()
@@ -290,9 +314,11 @@ class JavaClassContainer:
         self.fields = {}
         self.methods = {}
         self.doxygen_map = {}
+        self.convert_protected_to_private_list = []
         self.package_line = -1
         self.class_line = -1
         self.snippet_pattern = re.compile("@snippet\s([a-zA-Z0-9_\.\-]+)\s")
+        self.protected_pattern = re.compile("\sprotected\s")
         c = 0
         with open(filename) as f:
             for l in f.readlines():
@@ -327,20 +353,27 @@ class SwigProcessor():
                 return path
         return None
 
-    def find_destination(self, file_name):
-        if os.path.isfile(file_name):
-            return file_name
-        base_file_name = os.path.basename(file_name)
+    def find_destination(self, root_path, class_name):
+        relative_path = "%s/%s.java" %(root_path, class_name)
+        search_paths = []
+        #path = "build/%s/%s.java" %(root_path, class_name)
+        #search_paths.append(path)
+        #if os.path.isfile(path):
+        #    return (path, search_paths)
+        base_file_name = "%s.java" %(class_name)
         for p in self.destination_loc:
             # Try to see if we can just prepend the given destinations
             # and consider we are being given a relative path
-            if os.path.isfile("%s/%s" %(p, file_name)):
-                return "%s/%s" %(p, file_name)
+            path = "%s/%s" %(p, relative_path)
+            search_paths.append(path)
+            if os.path.isfile(path):
+                return (path, search_paths)
             # Search directly the base file name in the specified destinations
             path = "%s/%s" %(p, base_file_name)
+            search_paths.append(path)
             if os.path.isfile(path):
-                return path
-        return None
+                return (path, search_paths)
+        return (None, search_paths)
 
     def process_java(self, class_file):
         ret = {}
@@ -371,12 +404,14 @@ class SwigProcessor():
         try:
             parser = CppHeaderParser.CppHeader(header_loc)
         except CppHeaderParser.CppParseError as e:
+            print "* Error parsing: %s" %(header_loc)
             print(e)
             return ret
             #sys.exit(3)
         except UnboundLocalError as e:
             # The CppHeaderParser crashes on some syntax, this catches the error.
             # Issue not fixed upstream, using this as a workaround.
+            print "* Error parsing: %s" %(header_loc)
             print(e)
             return ret
 
@@ -408,10 +443,10 @@ class SwigProcessor():
                 if include_file.endswith(".hpp"):
                     self.cpp_classes.update(self.process_header(root_path, include_file))
         for class_name in self.cpp_classes.keys():
-            java_file = "build/%s/%s.java" %(root_path, class_name)
-            java_loc = self.find_destination(java_file)
+            (java_loc, search_paths) = self.find_destination(root_path, class_name)
             if java_loc == None:
-                print "Unable to find Java class definition file: %s" %(java_file)
+                print "* Warning: Unable to find Java class definition file for class \"%s\"" %(class_name)
+                print "*** Searched locations:", search_paths
                 continue
             java_file = java_loc
             orig_java_file = "%s.orig" %(java_file)
@@ -428,7 +463,9 @@ class SwigProcessor():
             if class_name in self.java_classes:
                 #print "common class", class_name
                 self.java_classes[class_name].attach_doxygen(self.cpp_classes[class_name], self.params)
-                self.java_classes[class_name].rewrite_class_file()
+                if self.params["convert-protected-to-private"]:
+                    self.java_classes[class_name].convert_protected_to_private()
+                self.java_classes[class_name].rewrite_class_file(self.params)
 
     def append_destination_files(self, output_file_handler):
         if output_file_handler == None: return
@@ -439,9 +476,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("file_list", help = "List with SWIG interface files")
     parser.add_argument("-s","--source", default = "", help = "One or more paths where to look for C/C++ headers")
-    parser.add_argument("-d","--destination", default = "", help = "One or more paths where to look for Java class definitions")
+    parser.add_argument("-d","--destination", default = None, help = "One or more paths where to look for Java class definitions")
     parser.add_argument("-o","--output", help = "Write a file with the list of parsed files")
     parser.add_argument("-m","--mapping", default = None, help = "File mapping for @snippet references")
+    parser.add_argument("--convert-protected-to-private", action='store_true', help = "Convert protected fields & methods to private (this can break builds if resulting code is compiled)")
     args = parser.parse_args()
 
     swig_list_file = args.file_list
@@ -456,7 +494,11 @@ if __name__ == "__main__":
         except:
             pass
 
-    params = { "snippet_file_mapping": None }
+    params = {
+        "convert-protected-to-private": args.convert_protected_to_private,
+        "snippet_file_mapping": None
+    }
+
     if args.mapping is not None:
         mapping = {}
         with open(args.mapping) as f:
@@ -467,9 +509,13 @@ if __name__ == "__main__":
                 mapping[words[0]] = words[1]
         params["snippet_file_mapping"] = mapping
 
+    dest = []
+    if args.destination is not None:
+        dest = args.destination.split(",")
+
     for swig_file in open(swig_list_file).readlines():
         swig_file = swig_file.strip()
-        sp = SwigProcessor(args.source.split(","), args.destination.split(","), params)
+        sp = SwigProcessor(args.source.split(","), dest, params)
         sp.process_swig(swig_file)
         sp.push_doxygen()
         sp.append_destination_files(output_file_handler)
