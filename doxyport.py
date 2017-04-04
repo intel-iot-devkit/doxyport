@@ -294,6 +294,14 @@ class JavaClassContainer:
         i = 1
         insert_lines = self.doxygen_map.keys()
         out_file = open(java_file,"wt")
+
+        # Add note to header to identify .java files touched by doxyport.
+        # If ANY documentation lines exist for this file, add a small
+        # snippet at the beginning to show it was updated.
+        if len(insert_lines) > 0:
+            out_file.write('/* CXX header documentation injected w/%s */\n\n' %
+                os.path.basename(sys.argv[0]))
+
         for l in open(orig_java_file).readlines():
             # Check if Doxygen comments need to be appended before this line
             if i in insert_lines:
@@ -399,7 +407,8 @@ class SwigProcessor():
         header_loc = "%s/%s" %(root_path, header_file)
         header_loc = self.find_source(header_loc)
         if header_loc == None:
-            print "Unable to locate: %s" %(header_loc)
+            print "Unable to locate: %s\nSearch paths:\n\t%s" % \
+                    (header_file, "\n\t".join([root_path] + self.source_loc))
             return
         print "Processing header: %s" %(header_loc)
         try:
@@ -439,10 +448,18 @@ class SwigProcessor():
                 if include_file.endswith(".i"):
                     print "Ignoring recursive SWIG interface inclusions (%s)" %(include_file)
                     continue
-                if include_file.endswith(".h"):
-                    self.cpp_classes.update(self.process_header(root_path, include_file))
-                if include_file.endswith(".hpp"):
-                    self.cpp_classes.update(self.process_header(root_path, include_file))
+                if include_file.lower().endswith(".h"):
+                    try:
+                        self.cpp_classes.update(self.process_header(root_path, include_file))
+                    except:
+                        print 'Failed at path: %s, file: %s' % (root_path, include_file)
+                        raise
+                if include_file.lower().endswith(".hpp"):
+                    try:
+                        self.cpp_classes.update(self.process_header(root_path, include_file))
+                    except:
+                        print 'Failed at path: %s, file: %s' % (root_path, include_file)
+                        raise
         for class_name in self.cpp_classes.keys():
             (java_loc, search_paths) = self.find_destination(root_path, class_name)
             if java_loc == None:
@@ -473,10 +490,29 @@ class SwigProcessor():
         for l in self.parsed_destination_files:
             output_file_handler.write("%s\n" %(l))
 
+def includes_from_cmake(swig_file, cmake_json):
+    ''' Parse target CMake json compile commands file.  Return a list of header
+    include directories where the build directory name matches the directory
+    name for the provided swig_file'''
+    import re
+    match = re.match(r'.*/src/(.*)/.*\.i', swig_file)
+    dirs = []
+    if match:
+        # For each directory in the JSON which matches, grab include dirs
+        for cmd in (item['command'] for item in cmake_json if
+                (item['directory'].endswith(match.group(1)) and
+                    item['file'].endswith('JAVA_wrap.cxx'))):
+            includes = re.findall('-I(\S+)', cmd)
+            if includes:
+                dirs += includes
+    # Get the sensor library directory name
+    return set(dirs)
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("file_list", help = "List with SWIG interface files")
     parser.add_argument("-s","--source", default = "", help = "One or more paths where to look for C/C++ headers")
+    parser.add_argument("-c","--cmake", help = "CMake json compile commands file")
     parser.add_argument("-d","--destination", default = None, help = "One or more paths where to look for Java class definitions")
     parser.add_argument("-o","--output", help = "Write a file with the list of parsed files")
     parser.add_argument("-m","--mapping", default = None, help = "File mapping for @snippet references")
@@ -506,7 +542,9 @@ if __name__ == "__main__":
             for line in f:
                 if len(line) == 0: continue
                 if line[0] == "#": continue
-                words = line.strip().split('\t')
+                # Split mapping file on any whitespace (vs. # only tabs)
+                # since users often put spaces here.
+                words = line.strip().split()
                 mapping[words[0]] = words[1]
         params["snippet_file_mapping"] = mapping
 
@@ -514,12 +552,24 @@ if __name__ == "__main__":
     if args.destination is not None:
         dest = args.destination.split(",")
 
-    for swig_file in open(swig_list_file).readlines():
+    # Use a cmake json compile file for additional hints/includes
+    if args.cmake:
+        import json
+        args.cmake = json.load(open(args.cmake, 'r'))
+
+    for ndx, swig_file in enumerate(open(swig_list_file).readlines()):
         swig_file = swig_file.strip()
-        sp = SwigProcessor(args.source.split(","), dest, params)
+        # If args.cmake provided, add to args.source for this directory
+        search_dirs = args.source.split(',')
+        if args.cmake:
+            search_dirs += includes_from_cmake(swig_file, args.cmake)
+
+        sp = SwigProcessor(search_dirs, dest, params)
         sp.process_swig(swig_file)
         sp.push_doxygen()
         sp.append_destination_files(output_file_handler)
 
     if output_file_handler != None:
         output_file_handler.close()
+
+    print 'Finished processing %d SWIG interface files...\n' % ndx
