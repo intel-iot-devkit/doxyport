@@ -21,6 +21,8 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+"""Module DoxyPort"""
+
 import sys
 import os.path
 import os
@@ -30,7 +32,8 @@ import javalang
 import argparse
 import re
 
-class CppClassContainer():
+class CppClassContainer(object):
+    """Class CppClassContainer"""
     def __init__(self, name):
         self.name = name
         self.methods = {}
@@ -48,8 +51,8 @@ class CppClassContainer():
 
     def param_type_list(self, params):
         p_result = []
-        for p in params:
-            p_result.append(p["type"])
+        for param in params:
+            p_result.append(param["type"])
         return p_result
 
     def extract_class_doxygen(self, class_content):
@@ -58,15 +61,15 @@ class CppClassContainer():
         in_namespace = True
         if not "doxygen" in class_content:
             return (namespace_doxygen, class_doxygen)
-        for l in class_content["doxygen"].split("\n"):
-            if in_namespace and l.find("*//*") == 0:
+        for line in class_content["doxygen"].split("\n"):
+            if in_namespace and line.find("*//*") == 0:
                 namespace_doxygen.append("*/")
-                l = l[2:]
+                line = line[2:]
                 in_namespace = False
             if in_namespace:
-                namespace_doxygen.append(l)
+                namespace_doxygen.append(line)
             else:
-                class_doxygen.append(l)
+                class_doxygen.append(line)
         if in_namespace:
             class_doxygen = namespace_doxygen
             namespace_doxygen = []
@@ -74,48 +77,73 @@ class CppClassContainer():
 
     def fill(self, class_content):
         # class_content
-        # ['inherits', 'line_number', 'doxygen', 'name', 'parent', 'abstract', 'namespace', 'declaration_method', 'properties', 'forward_declares', 'typedefs', 'structs', 'enums', 'final', 'nested_classes', 'methods']
+        # [
+        #     'inherits',
+        #     'line_number',
+        #     'doxygen',
+        #     'name',
+        #     'parent',
+        #     'abstract',
+        #     'namespace',
+        #     'declaration_method',
+        #     'properties',
+        #     'forward_declares',
+        #     'typedefs',
+        #     'structs',
+        #     'enums',
+        #     'final',
+        #     'nested_classes',
+        #     'methods'
+        # ]
         self.namespace_doxygen, self.class_doxygen = self.extract_class_doxygen(class_content)
         #print class_content["methods"]["public"]
         #print "Public methods:"
-        for m in class_content["methods"]["public"]:
+        for public_method in class_content["methods"]["public"]:
             #print m["doxygen"]
-            #print m["rtnType"], m["const"], m["static"], m["virtual"], m["name"], m["constructor"], m["destructor"], len(m["parameters"]), param_type_list(m["parameters"])
-            self.add_method(m["name"],{
-                'return_type': m["rtnType"],
-                'const': m["const"],
-                'static': m["static"],
-                'virtual': m["virtual"],
-                'constructor': m["constructor"],
-                'destructor': m["destructor"],
-                'param_types': self.param_type_list(m["parameters"]),
-                'doxygen': m.get("doxygen",None)
+            #print m["rtnType"], m["const"], m["static"], m["virtual"], m["name"]
+            #print m["constructor"], m["destructor"], len(m["parameters"])
+            #print param_type_list(m["parameters"])
+            self.add_method(public_method["name"], {
+                'return_type': public_method["rtnType"],
+                'const': public_method["const"],
+                'static': public_method["static"],
+                'virtual': public_method["virtual"],
+                'constructor': public_method["constructor"],
+                'destructor': public_method["destructor"],
+                'param_types': self.param_type_list(public_method["parameters"]),
+                'doxygen': public_method.get("doxygen", None)
             })
         #print "Public properties:"
-        for m in class_content["properties"]["public"]:
+        for public_property in class_content["properties"]["public"]:
             #print m["doxygen"]
             #print m["rtnType"], m["const"], m["static"], m["name"]
             #print m
-            self.properties[m["name"]] = {
-                'type': m["type"],
-                'static': m["static"],
-                #'doxygen': m["doxygen"] # TODO: check if there are doxygen comments for properties
+            self.properties[public_property["name"]] = {
+                'type': public_property["type"],
+                'static': public_property["static"],
+                # TODO: check if there are doxygen comments for properties
+                #'doxygen': public_property["doxygen"]
             }
         if len(class_content["methods"]["private"]) > 0:
-            for m in class_content["methods"]["private"]:
-                if "doxygen" in m and len(m["doxygen"]) > 0: print "*** Private method \"%s\" in class \"%s\" has doxygen comment." %(m["name"], self.name)
+            for private_method in class_content["methods"]["private"]:
+                if "doxygen" in private_method and len(private_method["doxygen"]) > 0:
+                    print "*** Private method \"%s\" in class \"%s\" has doxygen comment." %(private_method["name"], self.name)
         if len(class_content["properties"]["private"]) > 0:
-            for m in class_content["properties"]["private"]:
-                if "doxygen" in m and len(m["doxygen"]) > 0: print "*** Private property \"%s\" in class \"%s\" has doxygen comment." %(m["name"], self.name)
+            for private_property in class_content["properties"]["private"]:
+                if "doxygen" in private_property and len(private_property["doxygen"]) > 0:
+                    print "*** Private property \"%s\" in class \"%s\" has doxygen comment." %(private_property["name"], self.name)
         if len(class_content["typedefs"]["public"]) > 0:
-            for m in class_content["typedefs"]["public"]:
-                if "doxygen" in m and len(m["doxygen"]) > 0: print "*** Public typedef \"%s\" in class \"%s\" has doxygen comment." %(m["name"], self.name)
+            for public_typedef in class_content["typedefs"]["public"]:
+                if "doxygen" in public_typedef and len(public_typedef["doxygen"]) > 0:
+                    print "*** Public typedef \"%s\" in class \"%s\" has doxygen comment." %(public_typedef["name"], self.name)
         if len(class_content["structs"]["public"]) > 0:
-            for m in class_content["structs"]["public"]:
-                if "doxygen" in m and len(m["doxygen"]) > 0: print "*** Public struct \"%s\" in class \"%s\" has doxygen comment." %(m["name"], self.name)
+            for public_struct in class_content["structs"]["public"]:
+                if "doxygen" in public_struct and len(public_struct["doxygen"]) > 0:
+                    print "*** Public struct \"%s\" in class \"%s\" has doxygen comment." %(public_struct["name"], self.name)
         if len(class_content["enums"]["public"]) > 0:
-            for m in class_content["enums"]["public"]:
-                if "doxygen" in m and len(m["doxygen"]) > 0: print "*** Public enum \"%s\" in class \"%s\" has doxygen comment." %(m["name"], self.name)
+            for public_enum in class_content["enums"]["public"]:
+                if "doxygen" in public_enum and len(public_enum["doxygen"]) > 0:
+                    print "*** Public enum \"%s\" in class \"%s\" has doxygen comment." %(public_enum["name"], self.name)
         if len(class_content["nested_classes"]) > 0:
             print "*** Class \"%s\" has %d public nested classes." %(self.name, len(class_content["nested_classes"]))
             #for c in class_content["nested_classes"]:
@@ -137,15 +165,16 @@ class CppClassContainer():
                 return cpp_m_declaration["doxygen"]
         return None # Not found
 
-class JavaClassContainer:
-    def add_field(self, n, d):
-        self.fields[n] = d
+class JavaClassContainer(object):
+    """Class JavaClassContainer"""
+    def add_field(self, name, declaration):
+        self.fields[name] = declaration
         #print n, d
 
-    def add_method(self, m, d):
-        if m not in self.methods:
-            self.methods[m] = []
-        self.methods[m].append(d)
+    def add_method(self, method, declaration):
+        if method not in self.methods:
+            self.methods[method] = []
+        self.methods[method].append(declaration)
         #print "method:", m, d
 
     def get_type(self, type_param):
@@ -155,12 +184,12 @@ class JavaClassContainer:
 
     def param_type_list(self, params):
         p_result = []
-        for p in params:
-            p_result.append(self.get_type(p.type))
+        for param in params:
+            p_result.append(self.get_type(param.type))
         return p_result
 
     def add_field_declaration(self, declaration):
-        d = {
+        dec = {
             'type': declaration.type.name,
             'line_position': declaration._position[0],
             'private': 'private' in declaration.modifiers,
@@ -170,10 +199,10 @@ class JavaClassContainer:
             'const': 'const' in declaration.modifiers,
         }
         for field in declaration.declarators:
-            self.add_field(field.name, d)
+            self.add_field(field.name, dec)
 
     def add_constructor_declaration(self, declaration):
-        d = {
+        dec = {
             'line_position': declaration._position[0],
             'private': 'private' in declaration.modifiers,
             'protected': 'protected' in declaration.modifiers,
@@ -185,10 +214,10 @@ class JavaClassContainer:
             'return_type': "void",
             'param_types': self.param_type_list(declaration.parameters)
         }
-        self.add_method(declaration.name, d)
+        self.add_method(declaration.name, dec)
 
     def add_method_declaration(self, declaration):
-        d = {
+        dec = {
             'line_position': declaration._position[0],
             'private': 'private' in declaration.modifiers,
             'protected': 'protected' in declaration.modifiers,
@@ -200,19 +229,21 @@ class JavaClassContainer:
             'return_type': self.get_type(declaration.return_type),
             'param_types': self.param_type_list(declaration.parameters)
         }
-        self.add_method(declaration.name, d)
+        self.add_method(declaration.name, dec)
 
-    def doxygen_post_process(self, doxygen_comment, params = {}):
+    def doxygen_post_process(self, doxygen_comment, params={}):
         if params.get("snippet_file_mapping", None) == None:
             # No post-processing parameters passed
             return doxygen_comment
         def file_lookup(file_name, dict_name):
-            r = dict_name.get(file_name, None)
-            if r is None:
+            """file_lookup"""
+            ref = dict_name.get(file_name, None)
+            if ref is None:
                 print "* Warning: No match found for referenced snippet in '%s'" %(file_name)
                 return file_name
-            return r
+            return ref
         def file_replace(match_object):
+            """file_replace"""
             file_name = match_object.group(1)
             new_name = file_lookup(file_name, params.get("snippet_file_mapping", {}))
             return "@snippet %s " %(new_name)
@@ -220,7 +251,7 @@ class JavaClassContainer:
         # TODO: must ensure all comments are stored in the same way
         # (not as lists or as strings at the same time)
         # Ugly temporary fix below
-        if type(doxygen_comment) == str: doxygen_comment = [ doxygen_comment ]
+        if type(doxygen_comment) == str: doxygen_comment = [doxygen_comment]
         for line in doxygen_comment:
             # code for displaying regexp matches
             #if line.find("@snippet")>=0: print "!!!!!", line
@@ -293,7 +324,7 @@ class JavaClassContainer:
         #print self.doxygen_map
         i = 1
         insert_lines = self.doxygen_map.keys()
-        out_file = open(java_file,"wt")
+        out_file = open(java_file, "wt")
 
         # Add note to header to identify .java files touched by doxyport.
         # If ANY documentation lines exist for this file, add a small
@@ -343,7 +374,8 @@ class JavaClassContainer:
             if type(declaration) == javalang.tree.MethodDeclaration:
                 self.add_method_declaration(declaration)
 
-class SwigProcessor():
+class SwigProcessor(object):
+    """Class SwigProcessor"""
     def __init__(self, source_loc, destination_loc, params):
         self.cpp_classes = {}
         self.java_classes = {}
@@ -425,7 +457,7 @@ class SwigProcessor():
             print(e)
             return ret
 
-        for class_name,class_content in parser.classes.iteritems():
+        for class_name, class_content in parser.classes.iteritems():
             c = CppClassContainer(class_name)
             c.fill(class_content)
             #c.display()
@@ -510,13 +542,13 @@ def includes_from_cmake(swig_file, cmake_json):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("file_list", help = "List with SWIG interface files")
-    parser.add_argument("-s","--source", default = "", help = "One or more paths where to look for C/C++ headers")
-    parser.add_argument("-c","--cmake", help = "CMake json compile commands file")
-    parser.add_argument("-d","--destination", default = None, help = "One or more paths where to look for Java class definitions")
-    parser.add_argument("-o","--output", help = "Write a file with the list of parsed files")
-    parser.add_argument("-m","--mapping", default = None, help = "File mapping for @snippet references")
-    parser.add_argument("--convert-protected-to-private", action='store_true', help = "Convert protected fields & methods to private (this can break builds if resulting code is compiled)")
+    parser.add_argument("file_list", help="List with SWIG interface files")
+    parser.add_argument("-s", "--source", default="", help="One or more paths where to look for C/C++ headers")
+    parser.add_argument("-c", "--cmake", help="CMake json compile commands file")
+    parser.add_argument("-d", "--destination", default=None, help="One or more paths where to look for Java class definitions")
+    parser.add_argument("-o", "--output", help="Write a file with the list of parsed files")
+    parser.add_argument("-m", "--mapping", default=None, help="File mapping for @snippet references")
+    parser.add_argument("--convert-protected-to-private", action='store_true', help="Convert protected fields & methods to private (this can break builds if resulting code is compiled)")
     args = parser.parse_args()
 
     swig_list_file = args.file_list
@@ -527,7 +559,7 @@ if __name__ == "__main__":
     output_file_handler = None
     if args.output != None:
         try:
-            output_file_handler = open(args.output,"wt")
+            output_file_handler = open(args.output, "wt")
         except:
             pass
 

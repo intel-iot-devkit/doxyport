@@ -21,17 +21,11 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-# Get current working dir
-CWD=$(pwd)
-
-# Switch to the script's directory to load environment
-cd /home/edison/builds/doxyport
-source env/bin/activate # load environment
-
 # Save script's directory
-SDIR=$(pwd)
+SDIR=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )
 
-# Get back to the working directory and call the Python script with the given parameters
-cd $CWD
+# Load script environment
+source $SDIR/env/bin/activate
 
+# Call the Python script with the given parameters
 python $SDIR/doxyport.py $@

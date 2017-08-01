@@ -1,6 +1,8 @@
 DoxyPort - Porting Doxygen documentation from C/C++ code to SWIG-generated code
 ==============
 
+[![Build Status](https://travis-ci.org/intel-iot-devkit/doxyport.svg?branch=master)](https://travis-ci.org/intel-iot-devkit/doxyport)
+
 DoxyPort is a Python project which ports Doxygen documentation from C/C++ code
 to SWIG-generated bidings; code. Currently, DoxyPort only supports Java
 generated bindings. The project covers the need to reuse the documentation from
